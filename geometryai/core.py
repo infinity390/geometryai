@@ -55,18 +55,27 @@ class Graph:
                         if i != j:
                             triplets.append((nbrs[i], v, nbrs[j]))
         return triplets
-def draw_geometry(points, edges, size=600, margin=40):
+def draw_geometry(points, edges, size, margin):
     pts = [(float(x), float(y)) for x, y in points]
     xs = [x for x, y in pts]
     ys = [y for x, y in pts]
     min_x, max_x = min(xs), max(xs)
     min_y, max_y = min(ys), max(ys)
+    width = max_x - min_x or 1
+    height = max_y - min_y or 1
+    if size is None:
+        size = 300
+    if margin is None:
+        margin = 40
+    scale = min(
+        (size - 2 * margin) / width,
+        (size - 2 * margin) / height
+    )
     def transform(x, y):
-        sx = (x - min_x) / (max_x - min_x or 1)
-        sy = (y - min_y) / (max_y - min_y or 1)
-        px = margin + sx * (size - 2 * margin)
-        py = size - (margin + sy * (size - 2 * margin))
+        px = margin + (x - min_x) * scale
+        py = size - (margin + (y - min_y) * scale)
         return px, py
+
     img = Image.new("RGB", (size, size), "white")
     draw = ImageDraw.Draw(img)
     for i, j in edges:
@@ -89,8 +98,8 @@ def draw_geometry(points, edges, size=600, margin=40):
             fill="blue",
             font=font
         )
+    img.save("output.png")
     return img
-
 def merge_category(cat, mergefx):
     n = len(cat)
     used = [False] * n
@@ -106,13 +115,23 @@ def merge_category(cat, mergefx):
         out.append(merged)
     return [list(set(item)) for item in out]
 
-def polygon_area(points):
+def are_collinear(points):
+    """
+    Returns True if all points are collinear, False otherwise.
+    points: list of (x, y), x and y can be Fraction or int
+    """
     n = len(points)
-    area = 0
-    for i in range(n - 1):
-        area += points[i][0] * points[i + 1][1] - points[i][1] * points[i + 1][0]
-    area += points[-1][0] * points[0][1] - points[-1][1] * points[0][0]
-    return abs(area) / 2
+    if n <= 2:
+        return True
+    x0, y0 = points[0]
+    x1, y1 = points[1]
+    dx = x1 - x0
+    dy = y1 - y0
+    for i in range(2, n):
+        xi, yi = points[i]
+        if (xi - x0) * dy != (yi - y0) * dx:
+            return False
+    return True
 def intersection(p1, p2, p3, p4):
     x1, y1 = p1
     x2, y2 = p2
@@ -131,6 +150,10 @@ def intersection(p1, p2, p3, p4):
     y = (A1 * C2 - A2 * C1) / det
     return (x, y)
 
+def point_sort(point):
+    if isinstance(point, str):
+        return ord(point)-ord("A")
+    return point
 def line_sort(line):
     if isinstance(line, str):
         return tuple(sorted([ord(item)-ord("A") for item in line]))
@@ -147,18 +170,45 @@ class Space:
         self.line_eq = []
         self.angle_eq = []
         self.tri_eq = []
-    def standard_angle(self, angle):
-        
+        self.perpendicular_angle = []
+        self.perpendicular = []
+    def standard_angle(self, angle):    
         if isinstance(angle, str):
             angle = tuple([ord(item)-ord("A") for item in angle])
         if angle[0] > angle[2]:
             angle = (angle[2],angle[1],angle[0])
+        if isinstance(angle, list):
+            angle = tuple(angle)
         for key in self.angle_list.keys():
             if key == angle or angle in self.angle_list[key]:
                 return key
         return None
+    def perpen_angle(self):
+        self.perpendicular = [[list(item2) for item2 in item] for item in self.perpendicular]
+        for item in itertools.combinations(self.line_info, 2):
+            item = list(item)            
+            if all(not self.straight_line(list(set(item[0]+item2[0]))) or not self.straight_line(list(set(item[1]+item2[1]))) for item2 in self.perpendicular)\
+               and all(not self.straight_line(list(set(item[0]+item2[1]))) or not self.straight_line(list(set(item[1]+item2[0]))) for item2 in self.perpendicular):
+                continue
+            if len(set(item[0])&set(item[1]))==1:
+                c = list(set(item[0])&set(item[1]))[0]
+                a = item[0].index(c)
+                b = item[1].index(c)
+                m, n = [], []
+                for i in range(2):
+                    d = [a,b][i]
+                    if d>0:
+                        [m,n][i].append(item[i][d-1])
+                    if d<len(item[i])-1:
+                        [m,n][i].append(item[i][d+1])
+                for item2 in itertools.product(m,n):
+                    angle = space.standard_angle((item2[0],c,item2[1]))
+                    if angle not in self.perpendicular_angle:
+                        self.perpendicular_angle.append(angle)
+        space.angle_eq.append(self.perpendicular_angle)
+        space.angle_eq = merge_category(space.angle_eq, default_merge)
     def straight_line(self, point_list):
-        return polygon_area([self.point_location[x] for x in point_list]) == 0
+        return are_collinear([self.point_location[x] for x in point_list])
     def sort_collinear(self, point_list):
         p = min([self.point_location[x][1] for x in point_list])
         p2 = [x for x in point_list if self.point_location[x][1] == p]
@@ -170,15 +220,21 @@ class Space:
         lst = list(set([item if item[0]<item[2] else (item[2],item[1],item[0]) for item in lst]))
         lst = [item for item in lst if not self.straight_line(list(item))]
         for item2 in lst:
-            a = list(item2[:2])
-            b = list(item2[1:])
             self.angle_list[item2] = []
-            for item in itertools.permutations(list(set(range(len(self.point_location))) - {item2[1]}),2):
-                if (self.straight_line(a+[item[0]]) and self.straight_line(b+[item[1]])) or\
-                   (self.straight_line(b+[item[0]]) and self.straight_line(a+[item[1]])):
-                    x = (item[0], item2[1], item[1])
-                    y = (item[1], item2[1], item[0])
-                    self.angle_list[item2]+= [x,y]
+            for item in itertools.permutations(self.line_info, 2):
+                if item2[0] in item[0] and item2[2] in item[1] and item2[1] in item[0] and item2[1] in item[1]:
+                    h = []
+                    for i in range(2):
+                        m = item[i][:item[i].index(item2[1])]
+                        n = item[i][item[i].index(item2[1])+1:]
+                        if item2[0] in m or item2[2] in m:
+                            h.append(m)
+                        elif item2[0] in n or item2[2] in n:
+                            h.append(n)
+                    for item3 in itertools.product(*h):
+                        x = (item3[0], item2[1], item3[1])
+                        y = (item3[1], item2[1], item3[0])
+                        self.angle_list[item2] += [x,y]
     def give_connect(self):
         out = []
         for item in self.line_info:
@@ -188,9 +244,8 @@ class Space:
     def line_eq_fx(self, line1, line2):
         line1 = line_sort(line1)
         line2 = line_sort(line2)
-        for item in self.line_info:
-            if line1[0] in item and line1[1] in item and line2[0] in item and line2[1] in item:
-                return True
+        if line1 == line2:
+            return True
         for item in self.line_eq:
             if line1 in item and line2 in item:
                 return True
@@ -198,6 +253,8 @@ class Space:
     def angle_eq_fx(self, angle1, angle2):
         angle1 = self.standard_angle(angle1)
         angle2 = self.standard_angle(angle2)
+        if angle1 == angle2:
+            return True
         for item in self.angle_eq:
             if angle1 in item and angle2 in item:
                 return True
@@ -205,8 +262,14 @@ class Space:
     def valid_line(self, line):
         line = line_sort(line)
         return any((line[0] in item and line[1] in item) for item in self.line_info)
-    def show_diagram(self):
-        draw_geometry(self.point_location, self.give_connect()).show()
+    def show_diagram(self, size):
+        out = draw_geometry(self.point_location, self.give_connect(), size, None)
+        try:
+            from IPython.display import display
+            display(out)
+            out.show()
+        except:
+            print("error displaying image")
     def calc_line_info(self):
         line = [self.line_info[x] for x in self.line]
         ray = [(self.line_info[x[0]], x[1]) for x in self.ray]
@@ -222,7 +285,6 @@ class Space:
                     cat.append(list(item))
             def mergefx(a, b):
                 return self.straight_line(list(set(a+b)))
-
             cat = merge_category(cat, mergefx)
             p = []
             
@@ -241,7 +303,6 @@ class Space:
                             pass
                         else:
                             self.point_location.pop(-1)
-                    #self.command.pop(-1)
                 cat = []
             else:
                 break
@@ -257,13 +318,14 @@ class Space:
         self.graph = Graph(self)
 def default_merge(a, b):
     return (set(a)&set(b)) != {}
-space = Space()
+space = None
 def draw_triangle():
     global space
+    space = Space()
     space.point_location = [
-        (Fraction(0), Fraction(0)),      # A
-        (Fraction(4), Fraction(1)),      # B
-        (Fraction(1), Fraction(3)),      # C
+        (Fraction(0), Fraction(0)),
+        (Fraction(4), Fraction(1)),
+        (Fraction(1), Fraction(3)),
     ]
     space.line_info = [[0,1],[1,2],[2,0]]
 def given_equal_line(line1, line2):
@@ -313,6 +375,31 @@ def sss_rule(a1, a2, a3, b1, b2, b3):
         and space.line_eq_fx(line[2], line[3])
         and space.line_eq_fx(line[4], line[5])
     )
+def rhs_rule(a1, a2, a3, b1, b2, b3):
+    global space
+    a1, a2, a3, b1, b2, b3 = [[item] for item in [a1, a2, a3, b1, b2, b3]]
+    line = [
+        line_sort(a1 + a2),
+        line_sort(b1 + b2),
+        line_sort(a1 + a3),
+        line_sort(b1 + b3),
+    ]
+    angle = [space.standard_angle(a1 + a2 + a3), space.standard_angle(b1 + b2 + b3)]
+
+    for item in line:
+        if not space.valid_line(item):
+            return False
+
+    for item in angle:
+        if item is None:
+            return False
+        
+    return (
+        space.line_eq_fx(line[0], line[1])
+        and space.angle_eq_fx(angle[0], angle[1])
+        and space.line_eq_fx(line[2], line[3])
+        and angle[0] in space.perpendicular_angle
+    )
 def tri_sort(tri):
     return tuple([ord(item)-ord("A") for item in tri])
 def check_equal_angle(a, b):
@@ -332,7 +419,7 @@ def prove_congruent_triangle(tri1, tri2=None):
             a = list(x)
             b = list(y)
             for item in [a+b,b+a]:
-                for rule in [sss_rule]:
+                for rule in [sss_rule, rhs_rule]:
                     out = rule(*item)
                     if out:
                         space.tri_eq.append([x, y])
@@ -341,16 +428,23 @@ def process():
     global space
     space.calc_line_info()
     space.calc_angle_list()
-def split_line(line):
+    space.perpen_angle()
+def split_line(line, p=None):
     global space
     line = line_sort(line)
     a, b = space.point_location[line[0]], space.point_location[line[1]]
     px = (a[0]+b[0])/2
     py = (a[1]+b[1])/2
+    if p is not None:
+        px, py = p
     space.point_location.append((px, py))
+    r = len(space.point_location)-1
     for i in range(len(space.line_info)-1,-1,-1):
         if line[0] in space.line_info[i] and line[1] in space.line_info[i]:
-            space.line_info[i] = space.line_info[:min(line)]+[len(space.point_location)-1]+space.line_info[max(line):]
+            
+            space.line_info[i] = space.line_info[i][:min(line)]+[len(space.point_location)-1]+space.line_info[i][max(line):]
+            
+    return r
 def extended_line(line):
     global space
     line = line_sort(line)
@@ -362,6 +456,28 @@ def join(line):
     line = line_sort(line)
     space.line_info.append(line)
     space.command.append(line)
-def show():
+def foot_of_perpendicular(P, A, B):
+    x0, y0 = P
+    x1, y1 = A
+    x2, y2 = B
+    dx = x2 - x1
+    dy = y2 - y1
+    t = ((x0 - x1) * dx + (y0 - y1) * dy) / (dx*dx + dy*dy)
+    x = x1 + t * dx
+    y = y1 + t * dy
+    return (x, y)
+def draw_perpendicular(point, line):
     global space
-    space.show_diagram()
+    point = point_sort(point)
+    line = line_sort(line)
+    out = foot_of_perpendicular(space.point_location[point], space.point_location[line[0]], space.point_location[line[1]])
+    out2 = split_line(line, out)
+    m = line_sort((point, out2))
+    join(m)
+    space.perpendicular.append([m,line])
+def show(size=None):
+    global space
+    space.show_diagram(size)
+def norm_angle(angle):
+    global space
+    return space.standard_angle(angle)
