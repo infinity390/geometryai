@@ -1,3 +1,5 @@
+from mathai import tree_form, simplify, TreeNode, summation, linear_solve, inverse, vlist, str_form, flatten_tree
+import copy
 import itertools
 from fractions import Fraction
 from PIL import Image, ImageDraw, ImageFont
@@ -110,16 +112,26 @@ def merge_category(cat, mergefx):
         merged = []
         for j in range(i, n):
             if not used[j] and mergefx(cat[i], cat[j]):
-                merged += cat[j]
+                if isinstance(cat[j], (list, tuple, set)):
+                    merged.extend(cat[j])
+                else:
+                    merged.append(cat[j])
                 used[j] = True
         out.append(merged)
-    return [list(set(item)) for item in out]
-
+    result = []
+    for group in out:
+        seen = set()
+        clean = []
+        for x in group:
+            if x not in seen:
+                seen.add(x)
+                clean.append(x)
+        result.append(clean)
+    for i in range(len(result)-1,-1,-1):
+        if result[i] == []:
+            result.pop(i)
+    return result
 def are_collinear(points):
-    """
-    Returns True if all points are collinear, False otherwise.
-    points: list of (x, y), x and y can be Fraction or int
-    """
     n = len(points)
     if n <= 2:
         return True
@@ -149,7 +161,6 @@ def intersection(p1, p2, p3, p4):
     x = (C1 * B2 - C2 * B1) / det
     y = (A1 * C2 - A2 * C1) / det
     return (x, y)
-
 def point_sort(point):
     if isinstance(point, str):
         return ord(point)-ord("A")
@@ -163,12 +174,14 @@ class Space:
         self.point_location = []
         self.line_info = []
         self.angle_list = {}
+        self.angle_var_map = {}
         self.command = []
         self.line = []
         self.ray = []
         self.graph = None
         self.line_eq = []
         self.angle_eq = []
+        self.angle_val = {}
         self.tri_eq = []
         self.perpendicular_angle = []
         self.perpendicular = []
@@ -261,7 +274,9 @@ class Space:
         return False
     def valid_line(self, line):
         line = line_sort(line)
-        return any((line[0] in item and line[1] in item) for item in self.line_info)
+        if line[0] == line[1]:
+            return False
+        return any(line[0] in item and line[1] in item for item in self.line_info)
     def show_diagram(self, size):
         out = draw_geometry(self.point_location, self.give_connect(), size, None)
         try:
@@ -272,9 +287,7 @@ class Space:
             print("error displaying image")
     def calc_line_info(self):
         line = [self.line_info[x] for x in self.line]
-        ray = [(self.line_info[x[0]], x[1]) for x in self.ray]
         self.line = []
-        self.ray = []
         cat = []
         for index in range(2):
             for item in itertools.combinations(list(range(len(self.point_location))), 3):
@@ -290,7 +303,8 @@ class Space:
             
             for item in itertools.combinations(cat, 2):
                 p2 = intersection(*[self.point_location[item2] for item2 in item[0][:2]+item[1][:2]])
-                p.append(p2)
+                if p2 is not None:
+                    p.append(p2)
             p = list(set(p))
             if self.command != [] and index == 0:
                 for i in range(len(self.command)-1,-1,-1):
@@ -311,13 +325,9 @@ class Space:
             for i in range(len(self.line_info)):
                 if self.straight_line(list(self.line_info[i])+item):
                     self.line.append(i)
-        for item in ray:
-            for i in range(len(self.line_info)):
-                if self.straight_line(list(self.line_info[i])+item[0]):
-                    self.ray.append((i, item[1]))
         self.graph = Graph(self)
 def default_merge(a, b):
-    return (set(a)&set(b)) != {}
+    return set(a)&set(b) != set()
 space = None
 def draw_triangle():
     global space
@@ -334,19 +344,21 @@ def given_equal_line(line1, line2):
     line2 = line_sort(line2)
     space.line_eq.append([line1, line2])
     space.line_eq = merge_category(space.line_eq, default_merge)
+def given_equal_angle(angle1, angle2):
+    global space
+    space.angle_eq.append([space.standard_angle(angle1), space.standard_angle(angle2)])
+    space.angle_eq = merge_category(space.angle_eq, default_merge)
 def cpct():
     global space
     for item in space.tri_eq:
         for item2 in itertools.combinations(item, 2):
-            m2 = list(zip(*item2))
-            for item3 in itertools.permutations(m2):
+            for item3 in itertools.permutations(list(zip(*item2))):
                 angle1, angle2 = (item3[0][0], item3[1][0], item3[2][0]), (item3[0][1], item3[1][1], item3[2][1])
-                angle1, angle2 = space.standard_angle(angle1), space.standard_angle(angle2)
-                
+                angle1, angle2 = space.standard_angle(angle1), space.standard_angle(angle2)                
                 if angle1 is None or angle2 is None or angle1 == angle2:
                     continue
                 space.angle_eq.append([angle1, angle2])
-            for item3 in itertools.combinations(m2, 2):
+            for item3 in zip(list(itertools.combinations(item2[0], 2)), list(itertools.combinations(item2[1], 2))):
                 line1, line2 = item3
                 line1, line2 = line_sort(line1), line_sort(line2)
                 if not space.valid_line(line1) or not space.valid_line(line2) or line1 == line2:
@@ -365,11 +377,9 @@ def sss_rule(a1, a2, a3, b1, b2, b3):
         line_sort(a1 + a3),
         line_sort(b1 + b3),
     ]
-    
     for item in line:
         if not space.valid_line(item):
-            return False
-        
+            return False    
     return (
         space.line_eq_fx(line[0], line[1])
         and space.line_eq_fx(line[2], line[3])
@@ -385,21 +395,39 @@ def rhs_rule(a1, a2, a3, b1, b2, b3):
         line_sort(b1 + b3),
     ]
     angle = [space.standard_angle(a1 + a2 + a3), space.standard_angle(b1 + b2 + b3)]
-
     for item in line:
         if not space.valid_line(item):
             return False
-
     for item in angle:
         if item is None:
             return False
-        
     return (
         space.line_eq_fx(line[0], line[1])
         and space.angle_eq_fx(angle[0], angle[1])
         and space.line_eq_fx(line[2], line[3])
         and angle[0] in space.perpendicular_angle
     )
+def sas_rule(a1, a2, a3, b1, b2, b3):
+    global space
+    a1, a2, a3, b1, b2, b3 = [[item] for item in [a1, a2, a3, b1, b2, b3]]
+    line = [
+        line_sort(a1 + a2),
+        line_sort(b1 + b2),
+        line_sort(a2 + a3),
+        line_sort(b2 + b3),
+    ]
+    angle = [space.standard_angle(a1 + a2 + a3), space.standard_angle(b1 + b2 + b3)]
+    for item in line:
+        if not space.valid_line(item):
+            return False
+    for item in angle:
+        if item is None:
+            return False
+        
+    if space.angle_eq_fx(angle[0], angle[1]):
+        if space.line_eq_fx(line[0], line[1]) and space.line_eq_fx(line[2], line[3]):
+            return True
+    return False
 def tri_sort(tri):
     return tuple([ord(item)-ord("A") for item in tri])
 def check_equal_angle(a, b):
@@ -414,15 +442,12 @@ def prove_congruent_triangle(tri1, tri2=None):
         tri2 = tri1
     list1 = list(itertools.permutations(list(tri_sort(tri1))))
     list2 = list(itertools.permutations(list(tri_sort(tri2))))
-    for x in list1:
-        for y in list2:
-            a = list(x)
-            b = list(y)
-            for item in [a+b,b+a]:
-                for rule in [sss_rule, rhs_rule]:
-                    out = rule(*item)
-                    if out:
-                        space.tri_eq.append([x, y])
+    for item in itertools.product(list1, list2):
+        item = list(item[0])+list(item[1])
+        for rule in [sss_rule, rhs_rule, sas_rule]:
+            out = rule(*item)
+            if out:
+                space.tri_eq.append([tuple(item[:3]), tuple(item[-3:])])
     space.tri_eq = merge_category(space.tri_eq, default_merge)
 def process():
     global space
@@ -441,9 +466,7 @@ def split_line(line, p=None):
     r = len(space.point_location)-1
     for i in range(len(space.line_info)-1,-1,-1):
         if line[0] in space.line_info[i] and line[1] in space.line_info[i]:
-            
             space.line_info[i] = space.line_info[i][:min(line)]+[len(space.point_location)-1]+space.line_info[i][max(line):]
-            
     return r
 def extended_line(line):
     global space
@@ -454,7 +477,7 @@ def extended_line(line):
 def join(line):
     global space
     line = line_sort(line)
-    space.line_info.append(line)
+    space.line_info.append(list(line))
     space.command.append(line)
 def foot_of_perpendicular(P, A, B):
     x0, y0 = P
@@ -481,3 +504,187 @@ def show(size=None):
 def norm_angle(angle):
     global space
     return space.standard_angle(angle)
+def sub(a, b):
+    return (a[0] - b[0], a[1] - b[1])
+def dot(u, v):
+    return u[0]*v[0] + u[1]*v[1]
+def cross(u, v):
+    return u[0]*v[1] - u[1]*v[0]
+def closest_in_direction_fraction(A, B, points):
+    d = sub(B, A)
+    dd = dot(d, d)
+    candidates = []
+    for P in points:
+        AP = sub(P, A)
+        if cross(AP, d) == 0:
+            continue
+        num = dot(AP, d)
+        if num > 0:
+            t = Fraction(num, dd)
+            candidates.append((t, P))
+    if not candidates:
+        return None
+    return min(candidates, key=lambda x: x[0])[1]
+def point_in_direction_param(A, B, k):
+    dx = B[0] - A[0]
+    dy = B[1] - A[1]
+    return (
+        A[0] + k * dx,
+        A[1] + k * dy
+    )
+def extend_line(line):
+    global space
+    p = []
+    if isinstance(line, str):
+        line = [ord(item)-ord("A") for item in line]
+    a, b = space.point_location[line[0]], space.point_location[line[1]]
+    for item in itertools.combinations(list(range(len(space.point_location))),2):
+        tmp = intersection(space.point_location[item[0]], space.point_location[item[1]], a, b)
+        if tmp is None:
+            continue
+        p.append(tmp)
+    out = closest_in_direction_fraction(a, b, p)
+    newp = out
+    if out is None:
+        newp = point_in_direction_param(a, b, 2)
+    
+    space.point_location.append(newp)
+    join(line_sort((len(space.point_location)-1, line[1])))
+def point_in_polygon(point, polygon):
+    x, y = point
+    inside = False
+
+    n = len(polygon)
+
+    j = n - 1
+
+    for i in range(n):
+        xi, yi = polygon[i]
+        xj, yj = polygon[j]
+
+        if yi != yj:
+            if (yi > y) != (yj > y):
+                x_intersect = (xj - xi) * (y - yi) / (yj - yi) + xi
+
+                if x < x_intersect:
+                    inside = not inside
+
+        j = i
+
+    return inside
+def triangle_centroid(a, b, c):
+    """
+    a,b,c are (x,y) tuples
+    """
+    x = (a[0] + b[0] + c[0]) / 3
+    y = (a[1] + b[1] + c[1]) / 3
+    return (x, y)
+def generate_equation():
+    global space
+    x = space.graph.all_cycles()
+    lst = []
+    lst2 = []
+    for item in x:
+        if set(item) not in lst2:
+            lst.append(item)
+            lst2.append(set(item))
+    angle_list_new = list(sorted(list(set(space.angle_list.keys())-set(space.angle_var_map.keys()))))
+    var_list = list(sorted(list(set([f"v_{i}" for i in range(26)]) - set([item.name for key, item in space.angle_var_map.items()])), key=lambda x: int(x[2:])))
+    var_list = [tree_form(item) for item in var_list]
+    for i in range(len(angle_list_new)):
+        space.angle_var_map[angle_list_new[i]] = var_list[i]
+    lst3 = {}
+    for item in lst:
+        out = []
+        r = []
+        for i in range(len(item)):
+            if not space.straight_line([item[i-2], item[i-1], item[i]]):
+                out.append(item[i-1])
+                p = triangle_centroid(*[space.point_location[item2] for item2 in [item[i-2], item[i-1], item[i]]])
+                if not point_in_polygon(p, [space.point_location[item2] for item2 in item]):
+                    r.append(i)
+        lst3[tuple(out)] = set(r)
+    eq_list = []
+    for item, reflex in lst3.items():
+        eq = []
+        n = 0
+        for i in range(len(item)):
+            a = space.standard_angle((item[i-2], item[i-1], item[i]))
+            a = space.angle_var_map[a]
+            if item[i-1] in reflex:
+                eq.append(tree_form("d_360")-a)
+            else:
+                eq.append(a)
+            n += 1
+        n -=2
+        n = tree_form("d_180") * tree_form(f"d_{n}")
+        eq = TreeNode("f_eq", [summation(eq)-n, tree_form("d_0")])
+        eq_list.append(eq)
+    for item in space.angle_eq:
+        eq = []
+        for item2 in itertools.combinations(item, 2):
+            eq.append(TreeNode("f_eq", [space.angle_var_map[item2[0]]-space.angle_var_map[item2[1]], tree_form("d_0")]))
+        eq_list += eq
+    if len(eq_list) == 1:
+        eq_list = eq_list[0]
+    else:
+        eq_list = TreeNode("f_and", eq_list)
+    eq_list = simplify(eq_list)
+    return eq_list
+def access_space():
+    global space
+    return space
+def set_angle_val(eq):
+    global space
+    eq2 = simplify(linear_solve(eq))
+    for item in vlist(eq)+[None]:
+        eq2 = flatten_tree(eq2)
+        if eq2.name == "f_and":
+            eq2.children = list(set(eq2.children))
+        eq2 = simplify(eq2)
+        if item is None:
+            break
+        eq2 = eq2 & linear_solve(eq2, [tree_form(item)])
+    lst2 = []
+    lst = []
+    if eq2.name != "f_and":
+        lst2 = [eq2]
+    else:
+        lst2 = eq2.children
+    for item in lst2:
+        if item.name == "f_eq" and len(vlist(item)) == 1:
+            out = inverse(copy.deepcopy(item.children[0]), vlist(item)[0])
+            if out is None or "v_" in str_form(out):
+                continue
+            out = simplify(out)
+            find = None
+            for key, item2 in space.angle_var_map.items():
+                if item2 == tree_form(vlist(item)[0]):
+                    find = key
+            space.angle_val[find] = out
+        elif item.name == "f_eq" and len(vlist(item)) == 2:
+            out = inverse(copy.deepcopy(item.children[0]), vlist(item)[0])
+            if out is None:
+                continue
+            if out.name.startswith("v_"):
+                find = None
+                find2 = None
+                for key, item2 in space.angle_var_map.items():
+                    if item2 == tree_form(vlist(item)[0]):
+                        find = key
+                    if item2 == out:
+                        find2 = key
+                lst.append([find, find2])
+    for item in itertools.combinations(list(space.angle_val.keys()), 2):
+        if space.angle_val[item[0]] == space.angle_val[item[1]]:
+            lst.append(list(item))
+    space.angle_eq = merge_category(space.angle_eq, default_merge)
+def process2():
+    global space
+    set_angle_val(generate_equation())
+def check_angle_value(a):
+    global space
+    a = space.standard_angle(a)
+    if a in space.angle_val.keys():
+        return space.angle_val[a]
+    return None
