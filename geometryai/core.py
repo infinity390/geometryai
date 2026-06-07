@@ -1,4 +1,4 @@
-from mathai import tree_form, simplify, TreeNode, summation, linear_solve, inverse, vlist, str_form, flatten_tree
+from mathai import tree_form, simplify, TreeNode, summation, linear_solve, inverse, vlist, str_form, flatten_tree, parse, frac
 import copy
 import itertools
 from fractions import Fraction
@@ -396,27 +396,54 @@ def sss_rule(a1, a2, a3, b1, b2, b3):
         and space.line_eq_fx(line[2], line[3])
         and space.line_eq_fx(line[4], line[5])
     )
-def rhs_rule(a1, a2, a3, b1, b2, b3):
+def aas_rule(a1, a2, a3, b1, b2, b3):
     global space
-    a1, a2, a3, b1, b2, b3 = [[item] for item in [a1, a2, a3, b1, b2, b3]]
-    line = [
-        line_sort(a1 + a2),
-        line_sort(b1 + b2),
-        line_sort(a1 + a3),
-        line_sort(b1 + b3),
+    a1,a2,a3,b1,b2,b3 = [[x] for x in [a1,a2,a3,b1,b2,b3]]
+    angles = [
+        space.standard_angle(a1+a2+a3),
+        space.standard_angle(a2+a3+a1),
+        space.standard_angle(b1+b2+b3),
+        space.standard_angle(b2+b3+b1)
     ]
-    angle = [space.standard_angle(a1 + a2 + a3), space.standard_angle(b1 + b2 + b3)]
-    for item in line:
-        if not space.valid_line(item):
-            return False
-    for item in angle:
-        if item is None:
-            return False
+    if any(x is None for x in angles):
+        return False
+    side = [
+        line_sort(a1+a3),
+        line_sort(b1+b3)
+    ]
+    if not all(space.valid_line(x) for x in side):
+        return False
     return (
-        space.line_eq_fx(line[0], line[1])
-        and space.angle_eq_fx(angle[0], angle[1])
-        and space.line_eq_fx(line[2], line[3])
+        space.angle_eq_fx(angles[0], angles[2])
+        and
+        space.angle_eq_fx(angles[1], angles[3])
+        and
+        space.line_eq_fx(side[0], side[1])
+    )
+def rhs_rule(a1,a2,a3,b1,b2,b3):
+    global space
+    a1,a2,a3,b1,b2,b3 = [[x] for x in [a1,a2,a3,b1,b2,b3]]
+    leg = [
+        line_sort(a1+a2),
+        line_sort(b1+b2)
+    ]
+    hyp = [
+        line_sort(a1+a3),
+        line_sort(b1+b3)
+    ]
+    angle = [
+        space.standard_angle(a1+a2+a3),
+        space.standard_angle(b1+b2+b3)
+    ]
+    if None in angle:
+        return False
+    if not all(space.valid_line(x) for x in leg+hyp):
+        return False
+    return (
+        space.line_eq_fx(leg[0], leg[1])
+        and space.line_eq_fx(hyp[0], hyp[1])
         and angle[0] in space.perpendicular_angle
+        and angle[1] in space.perpendicular_angle
     )
 def sas_rule(a1, a2, a3, b1, b2, b3):
     global space
@@ -452,8 +479,8 @@ def asa_rule(a1,a2,a3,b1,b2,b3):
     angles = [
         space.standard_angle(a1+a2+a3),
         space.standard_angle(b1+b2+b3),
-        space.standard_angle(a2+a3+a1),
-        space.standard_angle(b2+b3+b1)
+        space.standard_angle(a2+a1+a3),
+        space.standard_angle(b2+b1+b3)
     ]
 
     if any(x is None for x in angles):
@@ -461,7 +488,6 @@ def asa_rule(a1,a2,a3,b1,b2,b3):
 
     if not all(space.valid_line(x) for x in side):
         return False
-
     return (
         space.angle_eq_fx(angles[0], angles[1])
         and space.angle_eq_fx(angles[2], angles[3])
@@ -483,7 +509,7 @@ def prove_congruent_triangle(tri1, tri2=None):
     list2 = list(itertools.permutations(list(tri_sort(tri2))))
     for item in itertools.product(list1, list2):
         item = list(item[0])+list(item[1])
-        for rule in [asa_rule, sss_rule, rhs_rule, sas_rule]:
+        for rule in [asa_rule, sss_rule, rhs_rule, sas_rule, aas_rule]:
             out = rule(*item)
             if out:
                 space.tri_eq.append([tuple(item[:3]), tuple(item[-3:])])
@@ -628,7 +654,8 @@ def generate_equation():
             lst.append(item)
             lst2.append(set(item))
     angle_list_new = list(sorted(list(set(space.angle_list.keys())-set(space.angle_var_map.keys()))))
-    var_list = list(sorted(list(set([f"v_{i}" for i in range(26)]) - set([item.name for key, item in space.angle_var_map.items()])), key=lambda x: int(x[2:])))
+    var_list = list(sorted(list(set([f"v_{i}" for i in range(26) if i not in [100]]) -\
+                                set([item.name for key, item in space.angle_var_map.items()])), key=lambda x: int(x[2:])))
     var_list = [tree_form(item) for item in var_list]
     for i in range(len(angle_list_new)):
         space.angle_var_map[angle_list_new[i]] = var_list[i]
@@ -664,6 +691,8 @@ def generate_equation():
         for item2 in itertools.combinations(item, 2):
             eq.append(TreeNode("f_eq", [space.angle_var_map[item2[0]]-space.angle_var_map[item2[1]], tree_form("d_0")]))
         eq_list += eq
+    for key, item in space.angle_val.items():
+        eq_list.append(TreeNode("f_eq", [space.angle_var_map[key]-item, tree_form("d_0")]))
     if len(eq_list) == 1:
         eq_list = eq_list[0]
     else:
@@ -717,10 +746,16 @@ def set_angle_val(eq):
     for item in itertools.combinations(list(space.angle_val.keys()), 2):
         if space.angle_val[item[0]] == space.angle_val[item[1]]:
             lst.append(list(item))
-    space.angle_eq = merge_category(space.angle_eq, default_merge)
+    space.angle_eq = merge_category(space.angle_eq+lst, default_merge)
 def process2():
     global space
-    set_angle_val(generate_equation())
+    tmp = generate_equation()
+    set_angle_val(tmp)
+    for key, item in space.angle_val.items():
+        if frac(item) == 90:
+            k = space.standard_angle(key)
+            if k not in space.perpendicular_angle:
+                space.perpendicular_angle.append(k)
 def check_angle_value(a):
     global space
     a = space.standard_angle(a)
@@ -741,8 +776,8 @@ def given_line_parallel(a, b):
     for item in space.parallel_eq:
         for item2 in itertools.combinations(item, 2):
             for item3 in itertools.product(space.line_info[item2[0]], space.line_info[item2[1]]):
-                item3 = line_sort(list(item3))
-                if space.valid_line(item3):
+                item3 = tuple(item3)
+                if space.valid_line(line_sort(list(item3))):
                     item4 = []
                     x = space.line_info[item2[0]].index(item3[0])
                     y = space.line_info[item2[1]].index(item3[1])
@@ -752,11 +787,13 @@ def given_line_parallel(a, b):
                             item4[-1].append(space.line_info[item2[i]][[x,y][i]-1])
                         if len(space.line_info[item2[i]])-1 != [x,y][i]:
                             item4[-1].append(space.line_info[item2[i]][[x,y][i]+1])
+                    
                     for item5 in itertools.product(*item4):
                         p = vector(item3[0], item5[0])
                         q = vector(item3[1], item5[1])
                         if p[0]*q[0] + p[1]*q[1] < 0:
-                            space.angle_eq.append([space.standard_angle([item5[0], item3[0], item3[1]]),space.standard_angle([item5[1], item3[1], item3[0]])])
+                            tmp = [space.standard_angle([item5[0], item3[0], item3[1]]),space.standard_angle([item5[1], item3[1], item3[0]])]
+                            space.angle_eq.append(tmp)
     space.angle_eq = merge_category(space.angle_eq, default_merge)
 def draw_quadrilateral():
     global space
@@ -768,6 +805,9 @@ def draw_quadrilateral():
         (Fraction(1), Fraction(3))
     ]
     space.line_info = [[0,1],[1,2],[2,3],[3,0]]
+def given_angle_val(a, val):
+    global space
+    space.angle_val[space.standard_angle(a)] = parse(val)
 def same_tri_pair(a, b, c, d):
     if set(a) == set(d) or set(b) == set(c):
         c, d = d, c
@@ -791,3 +831,52 @@ def check_equal_tri(a, b):
             if same_tri_pair(a, b, item2[0], item2[1]):
                 return True
     return False
+def god(string):
+    lines = [
+        line.rstrip()
+        for line in string.strip().split("\n")
+        if line.strip()
+    ]
+    block = None
+    for line in lines:
+        text = line.strip()
+        if text.endswith(":"):
+            block = text[:-1]
+            continue
+        parts = text.split()
+        if block == "construct":
+            if parts[0] == "triangle":
+                draw_triangle()
+            elif parts[0] == "quadrilateral":
+                draw_quadrilateral()
+            elif parts[0] == "extend":
+                extend_line(parts[1])
+            elif parts[0] == "join":
+                for x in parts[1:]:
+                    join(x)
+            process()
+        elif block == "given":
+            if parts[0] == "parallel_line":
+                given_line_parallel(parts[1],parts[2])
+            elif parts[0] == "line_eq":
+                given_equal_line(parts[1],parts[2])
+            elif parts[0] == "angle_eq":
+                given_equal_angle(parts[1],parts[2])
+            elif parts[0] == "angle_val":
+                given_angle_val(parts[1], parts[2])
+            process2()
+        elif block == "prove":
+            if parts[0] == "congruent_triangle":
+                prove_congruent_triangle(parts[1],parts[2])
+            elif parts[0] == "cpct":
+                cpct()
+            process2()
+        elif block == "query":
+            if parts[0] == "line_eq":
+                print(check_equal_line(parts[1],parts[2]))
+            elif parts[0] == "angle_val":
+                print(check_angle_value(parts[1]))
+            elif parts[0] == "congruent_triangle":
+                print(check_equal_tri(parts[1],parts[2]))
+        else:
+            print("Unknown block:", block)
