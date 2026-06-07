@@ -4,6 +4,15 @@
 
 ```python
 from geometryai import *
+variable_triangle = """
+construct:
+    triangle
+given:
+    angle_val BAC x
+    angle_val ABC 90-x
+query:
+    angle_val ACB
+"""
 equilateral_triangle = """
 construct:
     triangle
@@ -88,6 +97,7 @@ prove:
 query:
     congruent_triangle CBD ADB
 """
+god(variable_triangle)
 god(equilateral_triangle)
 god(example_3)
 god(exercise_7_1)
@@ -99,6 +109,7 @@ god(exercise_7_4)
 ### Output
 
 ```
+90
 60
 True
 True

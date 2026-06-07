@@ -1,4 +1,4 @@
-from mathai import tree_form, simplify, TreeNode, summation, linear_solve, inverse, vlist, str_form, flatten_tree, parse, frac
+from mathai import tree_form, simplify, TreeNode, summation, linear_solve, inverse, vlist, str_form, flatten_tree, parse, frac, dowhile, fraction
 import copy
 import itertools
 from fractions import Fraction
@@ -175,6 +175,7 @@ class Space:
         self.line_info = []
         self.angle_list = {}
         self.angle_var_map = {}
+        self.line_var_map = {}
         self.command = []
         self.line = []
         self.ray = []
@@ -644,6 +645,51 @@ def triangle_centroid(a, b, c):
     x = (a[0] + b[0] + c[0]) / 3
     y = (a[1] + b[1] + c[1]) / 3
     return (x, y)
+def split_lines(points):
+    result = []
+    n = len(points)
+    for start in range(n):
+        for end in range(start + 2, n):
+            line = points[start:end+1]
+            for i in range(1, len(line)-1):
+                left = line[:i+1]
+                right = line[i:]
+                if len(left) >= 2 and len(right) >= 2:
+                    result.append((left, right))
+
+    return result
+def generate_equation2():
+    global space
+    lst = []
+    for item in space.line_info:
+        for item2 in itertools.combinations(item, 2):
+            lst.append(line_sort(list(item2)))
+    lst = list(set(lst))
+    line_list_new = list(sorted(list(set(lst)-set(space.line_var_map.keys()))))
+    var_list = list(sorted(list(set([f"v_{i}" for i in range(3,26) if i not in [100]]) -\
+                                set([item.name for key, item in space.line_var_map.items()])), key=lambda x: int(x[2:])))
+    var_list = [tree_form(item) for item in var_list]
+    for i in range(len(line_list_new)):
+        space.line_var_map[line_list_new[i]] = var_list[i]
+    eq_list = []
+    for item in space.line_eq:
+        for item2 in item[1:]:
+            eq_list.append(TreeNode("f_eq", [space.line_var_map[item2]-space.line_var_map[item[0]], tree_form("d_0")]))
+    line_mul = False
+    for item in space.line_info:
+        for item2 in split_lines(item):
+            line_mul = True
+            eq_list.append(TreeNode("f_eq", [-space.line_var_map[line_sort([item2[0][0], item2[1][-1]])] +\
+                                             space.line_var_map[line_sort([item2[0][0], item2[0][-1]])] +\
+                                             space.line_var_map[line_sort([item2[1][0], item2[1][-1]])], tree_form("d_0")]))
+    if not line_mul:
+        return None
+    if len(eq_list) == 1:
+        eq_list = eq_list[0]
+    else:
+        eq_list = TreeNode("f_and", eq_list)
+    eq_list = simplify(eq_list)
+    return eq_list
 def generate_equation():
     global space
     x = space.graph.all_cycles()
@@ -654,7 +700,7 @@ def generate_equation():
             lst.append(item)
             lst2.append(set(item))
     angle_list_new = list(sorted(list(set(space.angle_list.keys())-set(space.angle_var_map.keys()))))
-    var_list = list(sorted(list(set([f"v_{i}" for i in range(26) if i not in [100]]) -\
+    var_list = list(sorted(list(set([f"v_{i}" for i in range(3,26) if i not in [100]]) -\
                                 set([item.name for key, item in space.angle_var_map.items()])), key=lambda x: int(x[2:])))
     var_list = [tree_form(item) for item in var_list]
     for i in range(len(angle_list_new)):
@@ -669,18 +715,17 @@ def generate_equation():
                 p = triangle_centroid(*[space.point_location[item2] for item2 in [item[i-2], item[i-1], item[i]]])
                 if not point_in_polygon(p, [space.point_location[item2] for item2 in item]):
                     r.append(i)
-        lst3[tuple(out)] = set(r)
+        lst3[tuple(out)] = list(set(r))
     eq_list = []
     for item, reflex in lst3.items():
+        if reflex != []:
+            continue
         eq = []
         n = 0
         for i in range(len(item)):
             a = space.standard_angle((item[i-2], item[i-1], item[i]))
             a = space.angle_var_map[a]
-            if item[i-1] in reflex:
-                eq.append(tree_form("d_360")-a)
-            else:
-                eq.append(a)
+            eq.append(a)
             n += 1
         n -=2
         n = tree_form("d_180") * tree_form(f"d_{n}")
@@ -688,8 +733,8 @@ def generate_equation():
         eq_list.append(eq)
     for item in space.angle_eq:
         eq = []
-        for item2 in itertools.combinations(item, 2):
-            eq.append(TreeNode("f_eq", [space.angle_var_map[item2[0]]-space.angle_var_map[item2[1]], tree_form("d_0")]))
+        for item2 in item[1:]:
+            eq.append(TreeNode("f_eq", [space.angle_var_map[item2]-space.angle_var_map[item[0]], tree_form("d_0")]))
         eq_list += eq
     for key, item in space.angle_val.items():
         eq_list.append(TreeNode("f_eq", [space.angle_var_map[key]-item, tree_form("d_0")]))
@@ -704,15 +749,12 @@ def access_space():
     return space
 def set_angle_val(eq):
     global space
-    eq2 = simplify(linear_solve(eq))
-    for item in vlist(eq)+[None]:
-        eq2 = flatten_tree(eq2)
-        if eq2.name == "f_and":
-            eq2.children = list(set(eq2.children))
-        eq2 = simplify(eq2)
-        if item is None:
-            break
-        eq2 = eq2 & linear_solve(eq2, [tree_form(item)])
+    x = [tree_form(item) for item in list(set(vlist(eq))&set(["v_0", "v_1", "v_2"]))]
+    eq2 = simplify(linear_solve(eq, x))
+    eq2 = flatten_tree(eq2)
+    if eq2.name == "f_and":
+        eq2.children = list(set(eq2.children))
+    eq2 = simplify(eq2)
     lst2 = []
     lst = []
     if eq2.name != "f_and":
@@ -720,16 +762,17 @@ def set_angle_val(eq):
     else:
         lst2 = eq2.children
     for item in lst2:
-        if item.name == "f_eq" and len(vlist(item)) == 1:
-            out = inverse(copy.deepcopy(item.children[0]), vlist(item)[0])
-            if out is None or "v_" in str_form(out):
+        h = list(set(vlist(item))-set(["v_0", "v_1", "v_2"]))
+        if item.name == "f_eq" and len(h) == 1:
+            out = inverse(copy.deepcopy(item.children[0]), h[0])
+            if out is None or list(set(vlist(out))-set(["v_0", "v_1", "v_2"])) != []:
                 continue
             out = simplify(out)
             find = None
             for key, item2 in space.angle_var_map.items():
-                if item2 == tree_form(vlist(item)[0]):
+                if item2 == tree_form(h[0]):
                     find = key
-            space.angle_val[find] = out
+            space.angle_val[find] = copy.deepcopy(out)
         elif item.name == "f_eq" and len(vlist(item)) == 2:
             out = inverse(copy.deepcopy(item.children[0]), vlist(item)[0])
             if out is None:
@@ -744,18 +787,54 @@ def set_angle_val(eq):
                         find2 = key
                 lst.append([find, find2])
     for item in itertools.combinations(list(space.angle_val.keys()), 2):
-        if space.angle_val[item[0]] == space.angle_val[item[1]]:
+        fx = lambda x: dowhile(x, lambda y: simplify(fraction(y)))
+        if fx(space.angle_val[item[0]] - space.angle_val[item[1]]) == 0:
             lst.append(list(item))
     space.angle_eq = merge_category(space.angle_eq+lst, default_merge)
+def set_line_val(eq):
+    global space
+    eq2 = simplify(linear_solve(eq))
+    
+    eq2 = flatten_tree(eq2)
+    if eq2.name == "f_and":
+        eq2.children = list(set(eq2.children))
+    eq2 = simplify(eq2)
+    
+    lst2 = []
+    lst = []
+    if eq2.name != "f_and":
+        lst2 = [eq2]
+    else:
+        lst2 = eq2.children
+    for item in lst2:
+        if item.name == "f_eq" and len(vlist(item)) == 2:
+            out = inverse(copy.deepcopy(item.children[0]), vlist(item)[0])
+            if out is None:
+                continue
+            if out.name.startswith("v_"):
+                find = None
+                find2 = None
+                for key, item2 in space.line_var_map.items():
+                    if item2 == tree_form(vlist(item)[0]):
+                        find = key
+                    if item2 == out:
+                        find2 = key
+                lst.append([find, find2])
+    space.line_eq = merge_category(space.line_eq+lst, default_merge)
 def process2():
     global space
     tmp = generate_equation()
     set_angle_val(tmp)
+    tmp = generate_equation2()
+    if tmp is not None:
+        set_line_val(tmp)
     for key, item in space.angle_val.items():
         if frac(item) == 90:
             k = space.standard_angle(key)
             if k not in space.perpendicular_angle:
                 space.perpendicular_angle.append(k)
+    space.angle_eq = merge_category(space.angle_eq, default_merge)
+    space.tri_eq = merge_category(space.tri_eq, default_merge)
 def check_angle_value(a):
     global space
     a = space.standard_angle(a)
@@ -831,6 +910,8 @@ def check_equal_tri(a, b):
             if same_tri_pair(a, b, item2[0], item2[1]):
                 return True
     return False
+def nothing():
+    pass
 def god(string):
     lines = [
         line.rstrip()
@@ -838,45 +919,60 @@ def god(string):
         if line.strip()
     ]
     block = None
+    lst = []
+    times = 1
+    fx = nothing
     for line in lines:
         text = line.strip()
         if text.endswith(":"):
+            if "(" in text:
+                times = int(text[text.index("(")+1:text.index(")")])
+                text = text[:text.index("(")+1]
+            else:
+                times = 1
             block = text[:-1]
+            if block in ["given", "prove"]:
+                fx = process2
+            elif block == "construct":
+                fx = process
+            else:
+                fx = nothing
             continue
         parts = text.split()
-        if block == "construct":
-            if parts[0] == "triangle":
-                draw_triangle()
-            elif parts[0] == "quadrilateral":
-                draw_quadrilateral()
-            elif parts[0] == "extend":
-                extend_line(parts[1])
-            elif parts[0] == "join":
-                for x in parts[1:]:
-                    join(x)
-            process()
-        elif block == "given":
-            if parts[0] == "parallel_line":
-                given_line_parallel(parts[1],parts[2])
-            elif parts[0] == "line_eq":
-                given_equal_line(parts[1],parts[2])
-            elif parts[0] == "angle_eq":
-                given_equal_angle(parts[1],parts[2])
-            elif parts[0] == "angle_val":
-                given_angle_val(parts[1], parts[2])
-            process2()
-        elif block == "prove":
-            if parts[0] == "congruent_triangle":
-                prove_congruent_triangle(parts[1],parts[2])
-            elif parts[0] == "cpct":
-                cpct()
-            process2()
-        elif block == "query":
-            if parts[0] == "line_eq":
-                print(check_equal_line(parts[1],parts[2]))
-            elif parts[0] == "angle_val":
-                print(check_angle_value(parts[1]))
-            elif parts[0] == "congruent_triangle":
-                print(check_equal_tri(parts[1],parts[2]))
-        else:
-            print("Unknown block:", block)
+        for i in range(times):
+            if block == "construct":
+                if parts[0] == "triangle":
+                    draw_triangle()
+                elif parts[0] == "quadrilateral":
+                    draw_quadrilateral()
+                elif parts[0] == "extend":
+                    extend_line(parts[1])
+                elif parts[0] == "join":
+                    for x in parts[1:]:
+                        join(x)
+            elif block == "given":
+                if parts[0] == "parallel_line":
+                    given_line_parallel(parts[1],parts[2])
+                elif parts[0] == "line_eq":
+                    given_equal_line(parts[1],parts[2])
+                elif parts[0] == "angle_eq":
+                    given_equal_angle(parts[1],parts[2])
+                elif parts[0] == "angle_val":
+                    
+                    given_angle_val(parts[1], parts[2])
+            elif block == "prove":
+                if parts[0] == "congruent_triangle":
+                    prove_congruent_triangle(parts[1],parts[2])
+                elif parts[0] == "cpct":
+                    cpct()
+                lst.append(text)
+            elif block == "query":
+                if parts[0] == "line_eq":
+                    print(check_equal_line(parts[1],parts[2]))
+                elif parts[0] == "angle_val":
+                    print(check_angle_value(parts[1]))
+                elif parts[0] == "congruent_triangle":
+                    print(check_equal_tri(parts[1],parts[2]))
+            else:
+                print("Unknown block:", block)
+            fx()

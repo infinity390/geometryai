@@ -5,7 +5,7 @@ README = Path(__file__).parent / "README.md"
 
 setup(
     name="geometryai",
-    version="0.1.6",
+    version="0.1.7",
     description="solve euclid geometry",
     long_description=README.read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",
