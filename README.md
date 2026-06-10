@@ -97,6 +97,28 @@ prove:
 query:
     congruent_triangle CBD ADB
 """
+square = """
+construct:
+    quadrilateral
+    join AC BD
+given:
+    line_eq AB BC
+    line_eq BC CD
+    line_eq CD AD
+prove:
+    congruent_triangle ACD ACB
+    cpct
+    congruent_triangle BDA BDC
+    cpct
+    congruent_triangle AEB CED
+    cpct
+    congruent_triangle CED CEB
+    cpct
+query:
+    angle_val ABC
+    angle_val AEB
+    line_eq AC BD
+"""
 god(variable_triangle)
 god(equilateral_triangle)
 god(example_3)
@@ -104,6 +126,7 @@ god(exercise_7_1)
 god(exercise_7_2)
 god(exercise_7_3)
 god(exercise_7_4)
+god(square)
 ```
 
 ### Output
@@ -118,6 +141,9 @@ True
 True
 True
 True
+True
+90
+90
 True
 ```
 
