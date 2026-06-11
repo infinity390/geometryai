@@ -4,7 +4,6 @@ import copy
 import itertools
 from fractions import Fraction
 from PIL import Image, ImageDraw, ImageFont
-
 class Graph:
     def __init__(self, space):
         self.n = len(space.point_location)
@@ -588,29 +587,19 @@ def extend_line(line):
 def point_in_polygon(point, polygon):
     x, y = point
     inside = False
-
     n = len(polygon)
-
     j = n - 1
-
     for i in range(n):
         xi, yi = polygon[i]
         xj, yj = polygon[j]
-
         if yi != yj:
             if (yi > y) != (yj > y):
                 x_intersect = (xj - xi) * (y - yi) / (yj - yi) + xi
-
                 if x < x_intersect:
                     inside = not inside
-
         j = i
-
     return inside
 def triangle_centroid(a, b, c):
-    """
-    a,b,c are (x,y) tuples
-    """
     x = (a[0] + b[0] + c[0]) / 3
     y = (a[1] + b[1] + c[1]) / 3
     return (x, y)
@@ -625,7 +614,6 @@ def split_lines(points):
                 right = line[i:]
                 if len(left) >= 2 and len(right) >= 2:
                     result.append((left, right))
-
     return result
 def generate_equation2():
     global space
@@ -634,7 +622,6 @@ def generate_equation2():
         for item2 in itertools.combinations(item, 2):
             lst.append(line_sort(list(item2)))
     lst = list(set(lst))
-    
     for item in space.line_info:
         for item2 in split_lines(item):
             space.line_list += [line_sort(x) for x in item2]
@@ -643,7 +630,6 @@ def generate_equation2():
             b = line_sort([item2[0][0], item2[0][-1]])
             c = line_sort([item2[1][0], item2[1][-1]])
             space.line_eq.data.append([ [a],[b,c] ])
-
 def generate_equation():
     global space
     x = space.graph.all_cycles()
@@ -680,7 +666,6 @@ def generate_equation():
 def access_space():
     global space
     return space
-
 def process2():
     global space
     generate_equation()
@@ -715,7 +700,6 @@ def given_line_parallel(a, b):
     space.parallel_list.append(a)
     space.parallel_list.append(b)
     space.parallel_list = list(set(space.parallel_list))
-    
     for item in space.parallel_eq.logic2d():
         for item2 in itertools.combinations(item, 2):
             for item3 in itertools.product(space.line_info[item2[0]], space.line_info[item2[1]]):
@@ -821,8 +805,7 @@ def god(string):
                     given_equal_line(parts[1],parts[2])
                 elif parts[0] == "angle_eq":
                     given_equal_angle(parts[1],parts[2])
-                elif parts[0] == "angle_val":
-                    
+                elif parts[0] == "angle_val":          
                     given_angle_val(parts[1], parts[2])
             elif block == "prove":
                 if parts[0] == "congruent_triangle":
