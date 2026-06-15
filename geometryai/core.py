@@ -385,7 +385,7 @@ def angle_to_t(theta):
     if abs(theta - math.pi) < 1e-12:
         return None
     t = math.tan(theta / 2)
-    return Fraction(t).limit_denominator(10)
+    return Fraction(t).limit_denominator(1000)
 def arc_split_t(t_a, t_b, mode="minor"):
     a = t_to_angle(t_a)
     b = t_to_angle(t_b)
@@ -394,16 +394,21 @@ def arc_split_t(t_a, t_b, mode="minor"):
         if d > math.pi:
             a, b = b, a
             d = (b-a) % (2*math.pi)
+        u = random.random()/2 + 0.25
+        theta = (a + u*d) % (2*math.pi)
     else:
-        if d < math.pi:
-            a, b = b, a
-            d = (b-a) % (2*math.pi)
-    u = random.random()
-    theta = (a + u*d) % (2*math.pi)
+        a_op = (a + math.pi) % (2*math.pi)
+        b_op = (b + math.pi) % (2*math.pi)
+        d_op = (b_op - a_op) % (2*math.pi)
+        if d_op > math.pi:
+            a_op, b_op = b_op, a_op
+            d_op = (b_op-a_op) % (2*math.pi)
+        u = random.random()/2 + 0.25
+        theta = (a_op + u*d_op) % (2*math.pi)
     return angle_to_t(theta)
 def diameter_point(center, pxy):
     global space
-    return any(are_collinear([space.point_location[center], space.point_location[item], pxy]) for item in space.circle_arc[center])
+    return all(not are_collinear([space.point_location[center], space.point_location[item], pxy]) for item in space.circle_arc[center])
 
 def arc_split(chord_a, chord_b, mode="minor"):
     global space
@@ -419,7 +424,7 @@ def arc_split(chord_a, chord_b, mode="minor"):
     t_m = arc_split_t(t_a, t_b, mode)
     while True:
         t = circle_point(center, radius, t_m)
-        if not diameter_point(center, t):
+        if diameter_point(center, t):
             t_m = t
             break
     space.point_location.append(t_m)
