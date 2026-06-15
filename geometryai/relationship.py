@@ -107,6 +107,7 @@ def rref(matrix):
                 matrix[i] = [ss(m - lv * n) for m, n in zip(matrix[i], matrix[r])]
         lead += 1
     return matrix
+
 class Row:
     def __init__(self, data=None):
         self.data = data
@@ -134,6 +135,7 @@ class Row:
         return Row([self.data[i]+other.data[i] for i in range(len(self.data))])
     def __neg__(self):
         return Row([-item for item in self.data])
+    
 def make_row_from_sum(key_list, sum_list):
     lst = []
     one = tree_form("d_1")
@@ -145,6 +147,7 @@ def make_row_from_sum(key_list, sum_list):
             lst.append(zero)
     lst.append(zero)
     return Row(lst)
+
 def logic_obj_row(key_list, eq):
     lst = []
     for item in eq.data:
@@ -152,6 +155,7 @@ def logic_obj_row(key_list, eq):
         for item2 in item[1:]:
             lst.append(base +  make_row_from_sum(key_list, item2))
     return lst
+
 def val_sum_row(key_list, val_sum):
     lst = []
     for key, item in val_sum.items():
@@ -159,6 +163,7 @@ def val_sum_row(key_list, val_sum):
         base.data[-1] = ss(-item)
         lst.append(base)
     return lst
+
 def solve_relationship(key_list, eq, val_sum):
     eq = eq.solve()
     m = logic_obj_row(key_list, eq) + val_sum_row(key_list, val_sum)

@@ -4,6 +4,8 @@ import copy
 import itertools
 from fractions import Fraction
 from PIL import Image, ImageDraw, ImageFont
+import math
+import random
 class Graph:
     def __init__(self, space):
         self.n = len(space.point_location)
@@ -58,51 +60,76 @@ class Graph:
                         if i != j:
                             triplets.append((nbrs[i], v, nbrs[j]))
         return triplets
-def draw_geometry(points, edges, size, margin):
+
+def draw_geometry(points, edges, circle, size=None, margin=None):
+    if margin is None:
+        margin = 25
+
     pts = [(float(x), float(y)) for x, y in points]
+
     xs = [x for x, y in pts]
     ys = [y for x, y in pts]
+
+    for item in circle:
+        cx, cy = map(float, points[item[0]])
+        r = float(item[1])
+        xs.extend([cx-r, cx+r])
+        ys.extend([cy-r, cy+r])
+
     min_x, max_x = min(xs), max(xs)
     min_y, max_y = min(ys), max(ys)
+
     width = max_x - min_x or 1
     height = max_y - min_y or 1
     if size is None:
-        size = 300
-    if margin is None:
-        margin = 40
-    scale = min(
-        (size - 2 * margin) / width,
-        (size - 2 * margin) / height
-    )
-    def transform(x, y):
-        px = margin + (x - min_x) * scale
-        py = size - (margin + (y - min_y) * scale)
-        return px, py
-
-    img = Image.new("RGB", (size, size), "white")
+        size = int(max(width, height) * 500 + 2 * margin)
+    scale = (size - 2*margin) / max(width, height)
+    def transform(x,y):
+        return (
+            margin + (x-min_x)*scale,
+            size - (margin + (y-min_y)*scale)
+        )
+    img = Image.new("RGB",(size,size),"white")
     draw = ImageDraw.Draw(img)
-    for i, j in edges:
-        p1 = transform(*pts[i])
-        p2 = transform(*pts[j])
-        draw.line([p1, p2], fill="black", width=2)
+    for item in circle:
+        cx,cy = transform(*map(float, points[item[0]]))
+        radius = float(item[1])*scale
+        draw.ellipse(
+            (cx-radius, cy-radius, cx+radius, cy+radius),
+            outline="black",
+            width=2
+        )
+
+    for i,j in edges:
+        draw.line(
+            [transform(*pts[i]), transform(*pts[j])],
+            fill="black",
+            width=2
+        )
+
     try:
-        font = ImageFont.truetype("arial.ttf", 22)
+        font = ImageFont.truetype("arial.ttf",22)
     except:
         font = ImageFont.load_default()
-    r = 4
-    label_offset = (6, -6)
-    for idx, (x, y) in enumerate(pts):
-        px, py = transform(x, y)
-        draw.ellipse((px-r, py-r, px+r, py+r), fill="red")
-        label = chr(ord("A") + idx)
+
+    for idx,(x,y) in enumerate(pts):
+        px,py = transform(x,y)
+
+        draw.ellipse(
+            (px-4,py-4,px+4,py+4),
+            fill="red"
+        )
+
         draw.text(
-            (px + label_offset[0], py + label_offset[1]),
-            label,
+            (px+6,py-6),
+            chr(ord("A")+idx),
             fill="blue",
             font=font
         )
+
     img.save("output.png")
     return img
+
 def are_collinear(points):
     n = len(points)
     if n <= 2:
@@ -160,6 +187,27 @@ class Space:
         self.parallel_list = []
         self.perpendicular_angle = []
         self.perpendicular = []
+        self.circle = []
+        self.circle_arc = {}
+    def point_on_circle(self, point, center, radius):
+        x, y = self.point_location[point]
+        ax, ay = self.point_location[center]
+        return (x - ax)**2 + (y - ay)**2 == radius**2
+    def update_arc(self):
+        for i in range(len(self.circle)):
+            for j in range(len(self.point_location)):
+                if self.point_on_circle(j, self.circle[i][0], self.circle[i][1]):
+                    if i in self.circle_arc.keys():
+                        if j not in self.circle_arc[i]:
+                            self.circle_arc[i].append(j)
+                    else:
+                        self.circle_arc[i] = [j]
+        for item in self.circle:
+            center = item[0]
+            lst = []
+            for item2 in self.circle_arc[center]:
+                lst.append([line_sort([item2, center])])    
+            space.line_eq.data.append(lst)
     def standard_angle(self, angle):    
         if isinstance(angle, str):
             angle = tuple([ord(item)-ord("A") for item in angle])
@@ -180,11 +228,8 @@ class Space:
         return None
     def perpen_angle(self):
         self.perpendicular = [[list(item2) for item2 in item] for item in self.perpendicular]
-        for item in itertools.combinations(self.line_info, 2):
-            item = list(item)            
-            if all(not self.straight_line(list(set(item[0]+item2[0]))) or not self.straight_line(list(set(item[1]+item2[1]))) for item2 in self.perpendicular)\
-               and all(not self.straight_line(list(set(item[0]+item2[1]))) or not self.straight_line(list(set(item[1]+item2[0]))) for item2 in self.perpendicular):
-                continue
+        for item2 in self.perpendicular:
+            item = list(map(lambda x: self.line_info[self.line_index(line_sort(x))], item2))
             if len(set(item[0])&set(item[1]))==1:
                 c = list(set(item[0])&set(item[1]))[0]
                 a = item[0].index(c)
@@ -262,7 +307,7 @@ class Space:
             return False
         return any(line[0] in item and line[1] in item for item in self.line_info)
     def show_diagram(self, size):
-        out = draw_geometry(self.point_location, self.give_connect(), size, None)
+        out = draw_geometry(self.point_location, self.give_connect(), self.circle, size, None)
         try:
             from IPython.display import display
             display(out)
@@ -311,6 +356,88 @@ class Space:
                     self.line.append(i)
         self.graph = Graph(self)
 space = None
+def circle_point(center, radius, t):
+    global space
+    ax, ay = space.point_location[center]
+    if t is None:
+        return (ax - radius, ay)
+    x = ax + radius * (1-t**2)/(1+t**2)
+    y = ay + radius * (2*t)/(1+t**2)
+    return (x, y)
+def restore_t(center, radius, point):
+    global space
+    ax, ay = space.point_location[center]
+    x, y = space.point_location[point]
+    denom = radius + x - ax
+    if denom == 0:
+        return None
+    return (y - ay) / denom
+def t_to_angle(t):
+    if t is None:
+        return math.pi
+    t = float(t)
+    theta = 2 * math.atan(t)
+    if theta < 0:
+        theta += 2 * math.pi
+    return theta
+def angle_to_t(theta):
+    theta %= 2 * math.pi
+    if abs(theta - math.pi) < 1e-12:
+        return None
+    t = math.tan(theta / 2)
+    return Fraction(t).limit_denominator(10)
+def arc_split_t(t_a, t_b, mode="minor"):
+    a = t_to_angle(t_a)
+    b = t_to_angle(t_b)
+    d = (b - a) % (2 * math.pi)
+    if mode == "minor":
+        if d > math.pi:
+            a, b = b, a
+            d = (b-a) % (2*math.pi)
+    else:
+        if d < math.pi:
+            a, b = b, a
+            d = (b-a) % (2*math.pi)
+    u = random.random()
+    theta = (a + u*d) % (2*math.pi)
+    return angle_to_t(theta)
+def diameter_point(center, pxy):
+    global space
+    return any(are_collinear([space.point_location[center], space.point_location[item], pxy]) for item in space.circle_arc[center])
+
+def arc_split(chord_a, chord_b, mode="minor"):
+    global space
+    if isinstance(chord_a, str):
+        chord_a = ord(chord_a)-ord("A")
+    if isinstance(chord_b, str):
+        chord_b = ord(chord_b)-ord("A")
+    center, radius = [item for index, item in enumerate(space.circle) if chord_a in space.circle_arc[index] and\
+                      chord_b in space.circle_arc[index]][0]
+    t_a = restore_t(center, radius, chord_a)
+    t_b = restore_t(center, radius, chord_b)
+    
+    t_m = arc_split_t(t_a, t_b, mode)
+    while True:
+        t = circle_point(center, radius, t_m)
+        if not diameter_point(center, t):
+            t_m = t
+            break
+    space.point_location.append(t_m)
+    space.update_arc()
+    join([len(space.point_location)-1, center])
+    return None
+def draw_circle():
+    global space
+    space = Space()
+    radius = Fraction(1,3)
+    space.point_location = [
+        (Fraction(0), Fraction(0)),
+        (Fraction(0), radius),
+        (-radius, Fraction(0))
+    ]
+    space.line_info = [[0,1],[0,2]]
+    space.circle.append((0,radius))
+    space.circle_arc = {0:[2,1]}
 def draw_triangle():
     global space
     space = Space()
@@ -435,24 +562,19 @@ def sas_rule(a1, a2, a3, b1, b2, b3):
     return False
 def asa_rule(a1,a2,a3,b1,b2,b3):
     global space
-
     a1,a2,a3,b1,b2,b3 = [[x] for x in [a1,a2,a3,b1,b2,b3]]
-
     side = [
         line_sort(a1+a2),
         line_sort(b1+b2)
     ]
-
     angles = [
         space.standard_angle(a1+a2+a3),
         space.standard_angle(b1+b2+b3),
         space.standard_angle(a2+a1+a3),
         space.standard_angle(b2+b1+b3)
     ]
-
     if any(x is None for x in angles):
         return False
-
     if not all(space.valid_line(x) for x in side):
         return False
     return (
@@ -488,6 +610,7 @@ def process():
     space.calc_line_info()
     space.calc_angle_list()
     space.perpen_angle()
+    space.update_arc()
 def split_line(line, p=None):
     global space
     line = line_sort(line)
@@ -539,7 +662,7 @@ def norm_angle(angle):
     global space
     return space.standard_angle(angle)
 def sub(a, b):
-    return (a[0] - b[0], a[1] - b[1])
+        return (a[0] - b[0], a[1] - b[1])
 def dot(u, v):
     return u[0]*v[0] + u[1]*v[1]
 def cross(u, v):
@@ -581,7 +704,6 @@ def extend_line(line):
     newp = out
     if out is None:
         newp = point_in_direction_param(a, b, 2)
-    
     space.point_location.append(newp)
     join(line_sort((len(space.point_location)-1, line[1])))
 def point_in_polygon(point, polygon):
@@ -621,7 +743,7 @@ def generate_equation2():
     for item in space.line_info:
         for item2 in itertools.combinations(item, 2):
             lst.append(line_sort(list(item2)))
-    lst = list(set(lst))
+    lst = list(set(lst))    
     for item in space.line_info:
         for item2 in split_lines(item):
             space.line_list += [line_sort(x) for x in item2]
@@ -630,6 +752,7 @@ def generate_equation2():
             b = line_sort([item2[0][0], item2[0][-1]])
             c = line_sort([item2[1][0], item2[1][-1]])
             space.line_eq.data.append([ [a],[b,c] ])
+
 def generate_equation():
     global space
     x = space.graph.all_cycles()
@@ -663,6 +786,8 @@ def generate_equation():
         n = tree_form("d_180") * tree_form(f"d_{n}")
         eq = tuple(sorted(eq))
         space.angle_val[eq] = n
+    for item in space.perpendicular_angle:
+        space.angle_val[tuple([item])] = tree_form("d_90")
 def access_space():
     global space
     return space
@@ -793,6 +918,16 @@ def god(string):
                     draw_triangle()
                 elif parts[0] == "quadrilateral":
                     draw_quadrilateral()
+                elif parts[0] == "circle":
+                    draw_circle()
+                elif parts[0] == "arcsplit_minor":
+                    arc_split(*parts[1], "minor")
+                elif parts[0] == "arcsplit_major":
+                    arc_split(*parts[1], "major")
+                elif parts[0] == "perpendicular":
+                    a,b,c = [parts[1]]+list(parts[2])
+                    a,b,c = map(lambda x: ord(x)-ord("A"),[a,b,c])
+                    draw_perpendicular(a, [b,c])
                 elif parts[0] == "extend":
                     extend_line(parts[1])
                 elif parts[0] == "join":
@@ -805,7 +940,7 @@ def god(string):
                     given_equal_line(parts[1],parts[2])
                 elif parts[0] == "angle_eq":
                     given_equal_angle(parts[1],parts[2])
-                elif parts[0] == "angle_val":          
+                elif parts[0] == "angle_val":
                     given_angle_val(parts[1], parts[2])
             elif block == "prove":
                 if parts[0] == "congruent_triangle":

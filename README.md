@@ -4,6 +4,17 @@
 
 ```python
 from geometryai import *
+circle = """
+construct:
+    circle
+    join BC
+    perpendicular A BC
+prove:
+    congruent_triangle ADC ADB
+    cpct
+query:
+    line_eq DC DB
+"""
 variable_triangle = """
 construct:
     triangle
@@ -119,6 +130,7 @@ query:
     angle_val AEB
     line_eq AC BD
 """
+god(circle)
 god(variable_triangle)
 god(equilateral_triangle)
 god(example_3)
@@ -132,6 +144,7 @@ god(square)
 ### Output
 
 ```
+True
 90
 60
 True

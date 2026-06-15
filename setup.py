@@ -5,13 +5,12 @@ README = Path(__file__).parent / "README.md"
 
 setup(
     name="geometryai",
-    version="0.1.8",
+    version="0.1.9",
     description="solve euclid geometry",
     long_description=README.read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",
 
     author="educated_indian",
-    author_email="you@example.com",
 
     packages=find_packages(),
 
