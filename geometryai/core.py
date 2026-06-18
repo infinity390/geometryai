@@ -398,6 +398,11 @@ class Space:
                 continue
             if out not in self.point_location:
                 self.point_location.append(out)
+                for i in range(2):
+                    lst2 = self.sort_collinear([len(self.point_location)-1, item[i][0], item[i][1]])
+                    if lst2[1] != len(self.point_location)-1:
+                        self.point_location.pop(-1)
+                        break
         self.straight_line([])
         self.collinear = [self.sort_collinear(item) for item in self.collinear]
         check = [copy.deepcopy([0]*len(item)) for item in self.collinear]
