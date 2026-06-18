@@ -290,7 +290,10 @@ class Space:
     def perpen_angle(self):
         self.perpendicular = [[list(item2) for item2 in item] for item in self.perpendicular]
         for item2 in self.perpendicular:
-            item = list(map(lambda x: self.line_info[self.line_index(line_sort(x))], item2))
+            item = list(map(lambda x: self.line_index(line_sort(x)), item2))
+            if None in item:
+                continue
+            item = list(map(lambda x: self.line_info[x], item))
             if len(set(item[0])&set(item[1]))==1:
                 c = list(set(item[0])&set(item[1]))[0]
                 a = item[0].index(c)
@@ -705,11 +708,7 @@ def split_line(line, p=None):
     if p is not None:
         px, py = p
     space.point_location.append((px, py))
-    r = len(space.point_location)-1
-    for i in range(len(space.line_info)-1,-1,-1):
-        if line[0] in space.line_info[i] and line[1] in space.line_info[i]:
-            space.line_info[i] = space.line_info[i][:min(line)]+[len(space.point_location)-1]+space.line_info[i][max(line):]
-    return r
+    return len(space.point_location)-1
 def extended_line(line):
     global space
     line = line_sort(line)
@@ -719,7 +718,6 @@ def extended_line(line):
 def join(line):
     global space
     line = line_sort(line)
-    space.line_info.append(list(line))
     space.command.append(line)
 def foot_of_perpendicular(P, A, B):
     x0, y0 = P
@@ -1013,6 +1011,8 @@ def god(string):
                 a,b,c = [parts[1]]+list(parts[2])
                 a,b,c = map(lambda x: ord(x)-ord("A"),[a,b,c])
                 draw_perpendicular(a, [b,c])
+            elif parts[0] == "split":
+                split_line(parts[1])
             elif parts[0] == "extend":
                 extend_line(parts[1])
             elif parts[0] == "join":
