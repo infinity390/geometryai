@@ -315,6 +315,18 @@ def solve_sqrt_h(eq):
     if isinstance(x, G):
         x = nested_radical(x)[0].eq()
     return flatten_tree(x)
+def dowhile2(eq, fx):
+    if eq is None:
+        return None
+    lst = []
+    while True:
+        lst.append(copy.deepcopy(eq))
+        eq2 = fx(eq)
+        if eq2 is None:
+            return None
+        eq = copy.deepcopy(eq2)
+        if eq in lst:
+            return lst[-1]
 def solve_sqrt(eq):
     fx = lambda x: transform_dfs(x, solve_sqrt_h)
     return dowhile(eq, lambda x: simplify(solve_sqrt_h(x), False))
@@ -326,8 +338,7 @@ def simp(eq):
     if isinstance(eq, F):
         eq = eq.value
     if isinstance(eq, TreeNode):
-        eq2 = solve_sqrt(eq)
-        eq = eq2
+        eq = solve_sqrt(eq)
         out = frac_2(eq)
         if out is None:
             return eq

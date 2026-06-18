@@ -129,7 +129,26 @@ def draw_geometry(points, edges, circle, size=None, margin=None):
 
     img.save("output.png")
     return img
-
+def collinear_groups(points):
+    n = len(points)
+    if n <= 2:
+        return [points]
+    groups = {}
+    for i in range(n):
+        x1, y1 = points[i]
+        for j in range(i+1, n):
+            x2, y2 = points[j]
+            dx = x2 - x1
+            dy = y2 - y1
+            line_points = []
+            for k in range(n):
+                x, y = points[k]
+                if dx*(y-y1) == dy*(x-x1):
+                    line_points.append((x,y))
+            if len(line_points) >= 3:
+                key = tuple(sorted(line_points))
+                groups[key] = line_points
+    return list(groups.values())
 def are_collinear(points):
     n = len(points)
     if n <= 2:
@@ -143,6 +162,46 @@ def are_collinear(points):
         if not( (xi - x0) * dy == (yi - y0) * dx ):
             return False
     return True
+def merge_collinear_groups(groups, get_point):
+    parent = list(range(len(groups)))
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    def union(a, b):
+        a = find(a)
+        b = find(b)
+        if a != b:
+            parent[b] = a
+    n = len(groups)
+    changed = True
+    while changed:
+        changed = False
+        for i in range(n):
+            for j in range(i+1, n):
+                if find(i) == find(j):
+                    continue
+                gi = []
+                gj = []
+                for k in range(n):
+                    if find(k) == find(i):
+                        gi += groups[k]
+                    if find(k) == find(j):
+                        gj += groups[k]
+                pts = [get_point(x) for x in gi + gj]
+                if len(pts) <= 2 or are_collinear(pts):
+                    union(i, j)
+                    changed = True
+                    break
+            if changed:
+                break
+    result = {}
+    for i, g in enumerate(groups):
+        root = find(i)
+        result.setdefault(root, [])
+        result[root].extend(g)
+    return list(result.values())
 def intersection(p1, p2, p3, p4):
     x1, y1 = p1
     x2, y2 = p2
@@ -170,6 +229,8 @@ def line_sort(line):
     return tuple(sorted(list(line)))
 class Space:
     def __init__(self):
+        self.collinear = []
+        self.point_count = 0
         self.point_location = []
         self.line_info = []
         self.angle_list = {}
@@ -246,8 +307,20 @@ class Space:
                     if angle not in self.perpendicular_angle:
                         self.perpendicular_angle.append(angle)
         space.angle_eq.data.append([[x] for x in self.perpendicular_angle])
+    
     def straight_line(self, point_list):
-        return are_collinear([self.point_location[x] for x in point_list])
+        if self.point_count < len(self.point_location):
+            for i in range(self.point_count, len(self.point_location)):
+                for j in range(0,i):
+                    self.collinear.append([i,j])
+            self.collinear = [list(set(item)) for item in self.collinear]
+            self.point_count = len(self.point_location)
+            self.collinear = merge_collinear_groups(self.collinear, lambda x: self.point_location[x])
+            self.collinear = [list(set(item)) for item in self.collinear]
+        for item in self.collinear:
+            if set(point_list) <= set(item):
+                return True
+        return False
     def sort_collinear(self, point_list):
         p = min([self.point_location[x][1] for x in point_list])
         p2 = [x for x in point_list if self.point_location[x][1] == p]
@@ -315,45 +388,40 @@ class Space:
         except:
             print("error displaying image")
     def calc_line_info(self):
-        line = [self.line_info[x] for x in self.line]
-        self.line = []
-        cat = []
-        for index in range(2):
-            for item in itertools.combinations(list(range(len(self.point_location))), 3):
-                if self.straight_line(list(item)):
-                    cat.append(list(item))
-            for item in self.line_info:
-                if len(item) == 2 and all(item[0] not in item2 or item[1] not in item2 for item2 in cat):
-                    cat.append(list(item))
-            def mergefx(a, b):
-                return self.straight_line(list(set(a+b)))
-            cat = merge_category(cat, mergefx)
-            p = []
-            
-            for item in itertools.combinations(cat, 2):
-                p2 = intersection(*[self.point_location[item2] for item2 in item[0][:2]+item[1][:2]])
-                if p2 is not None:
-                    p.append(p2)
-            p = list(set(p))
-            if self.command != [] and index == 0:
-                for i in range(len(self.command)-1,-1,-1):
-                    for item in p:
-                        if any(item2[0]==item[0] and item2[1]==item[1] for item2 in self.point_location):
-                            continue
-                        self.point_location.append(item)
-                        lst = [self.command[i][0], len(self.point_location)-1, self.command[i][1]]
-                        if self.straight_line(lst) and (any(lst[0] in item2 and lst[1] in item2 for item2 in self.line) or self.sort_collinear(lst)[1] == lst[1]):
-                            pass
-                        else:
-                            self.point_location.pop(-1)
-                cat = []
-            else:
-                break
-        self.line_info = [self.sort_collinear(item) for item in cat]
-        for item in line:
-            for i in range(len(self.line_info)):
-                if self.straight_line(list(self.line_info[i])+item):
-                    self.line.append(i)
+        for item in itertools.combinations(self.command, 2):
+            lst = []
+            for i in range(2):
+                for j in range(2):
+                    lst.append(self.point_location[item[i][j]])
+            out = intersection(*lst)
+            if out is None:
+                continue
+            if out not in self.point_location:
+                self.point_location.append(out)
+        self.straight_line([])
+        self.collinear = [self.sort_collinear(item) for item in self.collinear]
+        check = [copy.deepcopy([0]*len(item)) for item in self.collinear]
+        for item in self.command+self.line_info:
+            for i in range(len(check)):
+                if item[0] in self.collinear[i] and item[1] in self.collinear[i]:
+                    a, b = self.collinear[i].index(item[0]), self.collinear[i].index(item[1])
+                    if a > b:
+                        a, b = b, a
+                    for j in range(a,b+1):
+                        check[i][j] = 1
+        line = []
+        for i in range(len(check)):
+            lst = []
+            for j in range(len(check[i])):
+                if check[i][j] == 1:
+                    lst.append(self.collinear[i][j])
+                if (check[i][j] == 0 or j == len(check[i])-1) and len(lst)>0:
+                    line.append(lst.copy())
+                    lst = []
+        self.line_info = line
+        for item in self.line_info:
+            for i in range(len(item)-1):
+                self.line.append(line_sort([item[i], item[i+1]]))
         self.graph = Graph(self)
 space = None
 def arc_split_midpoints(center, B, C, radius=None):
@@ -665,6 +733,7 @@ def draw_perpendicular(point, line):
     out = foot_of_perpendicular(space.point_location[point], space.point_location[line[0]], space.point_location[line[1]])
     out2 = split_line(line, out)
     m = line_sort((point, out2))
+    
     join(m)
     space.perpendicular.append([m,line])
 def show(size=None):
