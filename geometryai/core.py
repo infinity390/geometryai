@@ -1,8 +1,8 @@
 from mathai import parse, frac, tree_form
 from .relationship import solve_relationship, Logic3D, merge_category
+from .coordinate import F
 import copy
 import itertools
-from fractions import Fraction
 from PIL import Image, ImageDraw, ImageFont
 import math
 import random
@@ -82,7 +82,7 @@ def draw_geometry(points, edges, circle, size=None, margin=None):
     width = max_x - min_x or 1
     height = max_y - min_y or 1
     if size is None:
-        size = int(max(width, height) * 500 + 2 * margin)
+        size = int(max(width, height) * 100 + 2 * margin)
     scale = (size - 2*margin) / max(width, height)
     def transform(x,y):
         return (
@@ -140,7 +140,7 @@ def are_collinear(points):
     dy = y1 - y0
     for i in range(2, n):
         xi, yi = points[i]
-        if (xi - x0) * dy != (yi - y0) * dx:
+        if not( (xi - x0) * dy == (yi - y0) * dx ):
             return False
     return True
 def intersection(p1, p2, p3, p4):
@@ -356,60 +356,69 @@ class Space:
                     self.line.append(i)
         self.graph = Graph(self)
 space = None
-def circle_point(center, radius, t):
-    global space
-    ax, ay = space.point_location[center]
-    if t is None:
-        return (ax - radius, ay)
-    x = ax + radius * (1-t**2)/(1+t**2)
-    y = ay + radius * (2*t)/(1+t**2)
-    return (x, y)
-def restore_t(center, radius, point):
-    global space
-    ax, ay = space.point_location[center]
-    x, y = space.point_location[point]
-    denom = radius + x - ax
-    if denom == 0:
-        return None
-    return (y - ay) / denom
-def t_to_angle(t):
-    if t is None:
-        return math.pi
-    t = float(t)
-    theta = 2 * math.atan(t)
-    if theta < 0:
-        theta += 2 * math.pi
-    return theta
-def angle_to_t(theta):
-    theta %= 2 * math.pi
-    if abs(theta - math.pi) < 1e-12:
-        return None
-    t = math.tan(theta / 2)
-    return Fraction(t).limit_denominator(1000)
-def arc_split_t(t_a, t_b, mode="minor"):
-    a = t_to_angle(t_a)
-    b = t_to_angle(t_b)
-    d = (b - a) % (2 * math.pi)
-    if mode == "minor":
-        if d > math.pi:
-            a, b = b, a
-            d = (b-a) % (2*math.pi)
-        u = random.random()/2 + 0.25
-        theta = (a + u*d) % (2*math.pi)
-    else:
-        a_op = (a + math.pi) % (2*math.pi)
-        b_op = (b + math.pi) % (2*math.pi)
-        d_op = (b_op - a_op) % (2*math.pi)
-        if d_op > math.pi:
-            a_op, b_op = b_op, a_op
-            d_op = (b_op-a_op) % (2*math.pi)
-        u = random.random()/2 + 0.25
-        theta = (a_op + u*d_op) % (2*math.pi)
-    return angle_to_t(theta)
-def diameter_point(center, pxy):
-    global space
-    return all(not are_collinear([space.point_location[center], space.point_location[item], pxy]) for item in space.circle_arc[center])
+def arc_split_midpoints(center, B, C, radius=None):
 
+    ox, oy = center
+
+    ux = B[0]-ox
+    uy = B[1]-oy
+
+    vx = C[0]-ox
+    vy = C[1]-oy
+
+
+    r = (ux*ux + uy*uy).fx("sqrt")
+
+    if radius is None:
+        radius = r
+
+
+    ux /= r
+    uy /= r
+
+    vx /= r
+    vy /= r
+
+
+    wx = ux + vx
+    wy = uy + vy
+
+
+    lw = (wx*wx + wy*wy).fx("sqrt")
+
+    if lw == 0:
+        raise Exception("Diameter")
+
+
+    wx /= lw
+    wy /= lw
+
+
+    p_plus = (
+        ox + radius*wx,
+        oy + radius*wy
+    )
+
+    p_minus = (
+        ox - radius*wx,
+        oy - radius*wy
+    )
+
+
+    # central angle
+    dot = ux*vx + uy*vy
+
+
+    # if angle is less than 180, + direction is minor
+    if dot > -1:
+        minor = p_plus
+        major = p_minus
+    else:
+        minor = p_minus
+        major = p_plus
+
+
+    return minor, major
 def arc_split(chord_a, chord_b, mode="minor"):
     global space
     if isinstance(chord_a, str):
@@ -418,27 +427,25 @@ def arc_split(chord_a, chord_b, mode="minor"):
         chord_b = ord(chord_b)-ord("A")
     center, radius = [item for index, item in enumerate(space.circle) if chord_a in space.circle_arc[index] and\
                       chord_b in space.circle_arc[index]][0]
-    t_a = restore_t(center, radius, chord_a)
-    t_b = restore_t(center, radius, chord_b)
-    
-    t_m = arc_split_t(t_a, t_b, mode)
-    while True:
-        t = circle_point(center, radius, t_m)
-        if diameter_point(center, t):
-            t_m = t
-            break
-    space.point_location.append(t_m)
+    A = space.point_location[chord_a]
+    B = space.point_location[chord_b]
+    out = arc_split_midpoints(space.point_location[center], A, B)
+    if mode == "minor":
+        out = out[0]
+    elif mode == "major":
+        out = out[1]
+    space.point_location.append(out)
     space.update_arc()
     join([len(space.point_location)-1, center])
     return None
 def draw_circle():
     global space
     space = Space()
-    radius = Fraction(1,3)
+    radius = F(1)
     space.point_location = [
-        (Fraction(0), Fraction(0)),
-        (Fraction(0), radius),
-        (-radius, Fraction(0))
+        (F(0), F(0)),
+        (F(0), radius),
+        (-radius, F(0))
     ]
     space.line_info = [[0,1],[0,2]]
     space.circle.append((0,radius))
@@ -447,9 +454,9 @@ def draw_triangle():
     global space
     space = Space()
     space.point_location = [
-        (Fraction(0), Fraction(0)),
-        (Fraction(4), Fraction(1)),
-        (Fraction(1), Fraction(3)),
+        (F(0), F(0)),
+        (F(4), F(1)),
+        (F(1), F(3)),
     ]
     space.line_info = [[0,1],[1,2],[2,0]]
 def given_equal_line(line1, line2):
@@ -682,12 +689,14 @@ def closest_in_direction_fraction(A, B, points):
             continue
         num = dot(AP, d)
         if num > 0:
-            t = Fraction(num, dd)
+            t = F(num)/F(dd)
             candidates.append((t, P))
     if not candidates:
         return None
     return min(candidates, key=lambda x: x[0])[1]
 def point_in_direction_param(A, B, k):
+    if isinstance(k, int):
+        k = F(k)
     dx = B[0] - A[0]
     dy = B[1] - A[1]
     return (
@@ -775,9 +784,11 @@ def generate_equation():
             if not space.straight_line([item[i-2], item[i-1], item[i]]):
                 out.append(item[i-1])
                 p = triangle_centroid(*[space.point_location[item2] for item2 in [item[i-2], item[i-1], item[i]]])
+                
                 if not point_in_polygon(p, [space.point_location[item2] for item2 in item]):
                     r.append(i)
         lst3[tuple(out)] = list(set(r))
+        
     for item, reflex in lst3.items():
         if reflex != []:
             continue
@@ -855,10 +866,10 @@ def draw_quadrilateral():
     global space
     space = Space()
     space.point_location = [
-        (Fraction(0), Fraction(0)),
-        (Fraction(4), Fraction(1)),
-        (Fraction(3), Fraction(4)),
-        (Fraction(1), Fraction(3))
+        (F(0), F(0)),
+        (F(4), F(1)),
+        (F(3), F(4)),
+        (F(1), F(3))
     ]
     space.line_info = [[0,1],[1,2],[2,3],[3,0]]
 def given_angle_val(a, val):
@@ -903,12 +914,8 @@ def god(string):
     for line in lines:
         text = line.strip()
         if text.endswith(":"):
-            if "(" in text:
-                times = int(text[text.index("(")+1:text.index(")")])
-                text = text[:text.index("(")+1]
-            else:
-                times = 1
             block = text[:-1]
+            fx()
             if block in ["given", "prove"]:
                 fx = process2
             elif block == "construct":
@@ -917,51 +924,49 @@ def god(string):
                 fx = nothing
             continue
         parts = text.split()
-        for i in range(times):
-            if block == "construct":
-                if parts[0] == "triangle":
-                    draw_triangle()
-                elif parts[0] == "quadrilateral":
-                    draw_quadrilateral()
-                elif parts[0] == "circle":
-                    draw_circle()
-                elif parts[0] == "arcsplit_minor":
-                    arc_split(*parts[1], "minor")
-                elif parts[0] == "arcsplit_major":
-                    arc_split(*parts[1], "major")
-                elif parts[0] == "perpendicular":
-                    a,b,c = [parts[1]]+list(parts[2])
-                    a,b,c = map(lambda x: ord(x)-ord("A"),[a,b,c])
-                    draw_perpendicular(a, [b,c])
-                elif parts[0] == "extend":
-                    extend_line(parts[1])
-                elif parts[0] == "join":
-                    for x in parts[1:]:
-                        join(x)
-            elif block == "given":
-                if parts[0] == "parallel_line":
-                    given_line_parallel(parts[1],parts[2])
-                elif parts[0] == "line_eq":
-                    given_equal_line(parts[1],parts[2])
-                elif parts[0] == "angle_eq":
-                    given_equal_angle(parts[1],parts[2])
-                elif parts[0] == "angle_val":
-                    given_angle_val(parts[1], parts[2])
-            elif block == "prove":
-                if parts[0] == "congruent_triangle":
-                    prove_congruent_triangle(parts[1],parts[2])
-                elif parts[0] == "cpct":
-                    cpct()
-                lst.append(text)
-            elif block == "query":
-                if parts[0] == "line_eq":
-                    print(check_equal_line(parts[1],parts[2]))
-                elif parts[0] == "angle_eq":
-                    print(check_equal_angle(parts[1],parts[2]))
-                elif parts[0] == "angle_val":
-                    print(check_angle_value(parts[1]))
-                elif parts[0] == "congruent_triangle":
-                    print(check_equal_tri(parts[1],parts[2]))
-            else:
-                print("Unknown block:", block)
-            fx()
+        if block == "construct":
+            if parts[0] == "triangle":
+                draw_triangle()
+            elif parts[0] == "quadrilateral":
+                draw_quadrilateral()
+            elif parts[0] == "circle":
+                draw_circle()
+            elif parts[0] == "arcsplit_minor":
+                arc_split(*parts[1], "minor")
+            elif parts[0] == "arcsplit_major":
+                arc_split(*parts[1], "major")
+            elif parts[0] == "perpendicular":
+                a,b,c = [parts[1]]+list(parts[2])
+                a,b,c = map(lambda x: ord(x)-ord("A"),[a,b,c])
+                draw_perpendicular(a, [b,c])
+            elif parts[0] == "extend":
+                extend_line(parts[1])
+            elif parts[0] == "join":
+                for x in parts[1:]:
+                    join(x)
+        elif block == "given":
+            if parts[0] == "parallel_line":
+                given_line_parallel(parts[1],parts[2])
+            elif parts[0] == "line_eq":
+                given_equal_line(parts[1],parts[2])
+            elif parts[0] == "angle_eq":
+                given_equal_angle(parts[1],parts[2])
+            elif parts[0] == "angle_val":
+                given_angle_val(parts[1], parts[2])
+        elif block == "prove":
+            if parts[0] == "congruent_triangle":
+                prove_congruent_triangle(parts[1],parts[2])
+            elif parts[0] == "cpct":
+                cpct()
+            lst.append(text)
+        elif block == "query":
+            if parts[0] == "line_eq":
+                print(check_equal_line(parts[1],parts[2]))
+            elif parts[0] == "angle_eq":
+                print(check_equal_angle(parts[1],parts[2]))
+            elif parts[0] == "angle_val":
+                print(check_angle_value(parts[1]))
+            elif parts[0] == "congruent_triangle":
+                print(check_equal_tri(parts[1],parts[2]))
+        else:
+            print("Unknown block:", block)

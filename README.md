@@ -7,13 +7,14 @@ from geometryai import *
 circle = """
 construct:
     circle
+    arcsplit_major BC
     join BC
     perpendicular A BC
 prove:
-    congruent_triangle ADC ADB
+    congruent_triangle AEC AEB
     cpct
 query:
-    line_eq DC DB
+    line_eq BE EC
 """
 variable_triangle = """
 construct:
@@ -111,7 +112,8 @@ query:
 square = """
 construct:
     quadrilateral
-    join AC BD
+    join AC
+    join BD
 given:
     line_eq AB BC
     line_eq BC CD
@@ -119,10 +121,13 @@ given:
 prove:
     congruent_triangle ACD ACB
     cpct
+prove:
     congruent_triangle BDA BDC
     cpct
+prove:
     congruent_triangle AEB CED
     cpct
+prove:
     congruent_triangle CED CEB
     cpct
 query:
