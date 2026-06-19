@@ -166,25 +166,23 @@ class G:
         return G(out, self.const + other.const)
     def __mul__(self, other):
         out = {}
-        out2 = self.const * other.const
-        for item in itertools.product(list(self.dic.items()), list(other.dic.items())):
-            a, b = item[0][0], item[1][0]
-            if (isinstance(a, Fraction) and isinstance(b, Fraction)) or (isinstance(a, G) and isinstance(b, G)):
-                c = a*b
-                if c in out.keys():
-                    out[c] += item[0][1]*item[1][1]
+        for a, ca in list(self.dic.items()) + [(Fraction(1), self.const)]:
+            for b, cb in list(other.dic.items()) + [(Fraction(1), other.const)]:
+                if isinstance(a, Fraction) and isinstance(b, Fraction):
+                    pass
                 else:
-                    out[c] = item[0][1]*item[1][1]
-        out = G(out, out2)
-        out2 = {}
-        for key, item in other.dic.items():
-            out2[key] = item * self.const
-        out3 = {}
-        for key, item in self.dic.items():
-            out3[key] = item * other.const
-        return out + G(out2) + G(out3)
+                    if isinstance(a, Fraction):
+                        a = G({}, a)
+                    if isinstance(b, Fraction):
+                        b = G({}, b)
+                c = a * b
+                if isinstance(c, G):
+                    c = c.simplify()
+                    if c.dic == {}:
+                        c = c.const
+                out[c] = out.get(c, Fraction(0)) + ca * cb
+        return G(out)
     def __truediv__(self, other):
-        
         other = nested_radical(other)[0]
         self = nested_radical(self)[0]
         if self.const == Fraction(0) and self.dic == {}:
@@ -211,6 +209,7 @@ class G:
         else:
             norm = G({}, other.const)
             ans = self
+        ans = nested_radical(ans)[0]
         for key, item in ans.dic.items():
             ans.dic[key] = item/norm.const
         ans.const = ans.const / norm.const
@@ -239,6 +238,7 @@ class G:
         else:
             final = summation(equation + [frac_to_tree_2(self.const)])
         return final
+
 def helper_2_h(eq):
     if eq.name == "f_sqrt":
         return eq.children[0] ** (tree_form("d_2")**tree_form("d_-1"))
